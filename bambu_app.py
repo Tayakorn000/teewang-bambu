@@ -6,7 +6,7 @@
 
 ค่าตั้ง (token Bambu กับกุญแจ teewang) อยู่ที่ %LOCALAPPDATA%\\TeewangBambu\\bambu.json ของเครื่องนี้ ไม่อยู่ข้าง exe
 ก๊อป exe ไปให้คนอื่นแล้วรหัสไม่ติดไปด้วย
-build: ./build.sh บนเครื่องที่มี Docker (PyInstaller ของ Windows ใน Wine) แล้วแนบ dist/TeewangBambu.exe ใน Releases
+build: รีโปสาธารณะ github.com/Tayakorn000/teewang-bambu (ก๊อปไฟล์ใน agents/ ไปแล้วติด tag v* ให้ GitHub build exe แนบใน Releases)
 """
 
 import getpass
@@ -24,8 +24,8 @@ STARTUP = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "S
 
 def setup():
     os.makedirs(HOME, exist_ok=True)
-    print("== ตั้งค่า: ล็อกอินบัญชี Bambu ที่ผูกเครื่องไว้ (รหัสผ่านไม่ถูกเก็บ)")
-    bambu_setup.main(CFG, "IX-3D-X1E-")
+    print("== ตั้งค่า: หาเครื่อง Bambu (รหัสผ่านไม่ถูกเก็บ)")
+    bambu_setup.main(CFG, "IX-3D-")
     with open(CFG, encoding="utf-8") as f:
         cfg = json.load(f)
     key = ""
