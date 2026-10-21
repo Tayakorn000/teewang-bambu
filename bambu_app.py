@@ -172,7 +172,13 @@ def main():
     if WIN:
         import ctypes
 
-        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        k = ctypes.windll.kernel32
+        k.SetConsoleOutputCP(65001)
+        # ปิด QuickEdit: คลิกในหน้าต่างแล้ว Windows หยุดโปรแกรมไว้ตอนพิมพ์ข้อความถัดไป ตัวส่งค้างเงียบจนกว่าจะกด Esc
+        mode = ctypes.c_uint32()
+        h = k.GetStdHandle(-10)
+        if k.GetConsoleMode(h, ctypes.byref(mode)):
+            k.SetConsoleMode(h, (mode.value & ~0x40) | 0x80)
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     if "--check" in args:
