@@ -12,14 +12,14 @@ import urllib.request
 DEFAULT_URL = "https://teewang.taokaetech.com/api/feed"
 
 
-def push(items, url=None, key=None):
+def push(items, url=None, key=None, jobs=None):
     """ส่งทั้งก้อน คืน True ถ้าเว็บรับ (204) ไม่ throw ตัวส่งต้องวนต่อได้แม้เน็ตหลุด"""
     key = key or os.environ.get("TEEWANG_KEY", "")
     if not key:
         sys.exit("ต้องตั้ง TEEWANG_KEY")
     req = urllib.request.Request(
         url or os.environ.get("TEEWANG_URL", DEFAULT_URL),
-        data=json.dumps({"items": items}).encode(),
+        data=json.dumps({"items": items, **({"jobs": jobs} if jobs else {})}).encode(),
         method="POST",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "teewang-agent/1"},
     )

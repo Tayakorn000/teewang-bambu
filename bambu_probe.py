@@ -19,6 +19,8 @@ import sys
 import threading
 import zipfile
 
+from bambu_jobs import ftps
+
 JOB_KEYS = ["gcode_state", "mc_percent", "mc_remaining_time", "subtask_name", "gcode_file", "task_id", "subtask_id", "project_id", "profile_id", "print_type", "layer_num", "total_layer_num", "mc_print_stage", "stg_cur"]
 
 
@@ -71,41 +73,6 @@ def ams_lines(pr):
     if isinstance(vt, dict) and vt.get("tray_type"):
         out.append(f"    ช่องนอก AMS: {vt.get('tray_type')} สี {vt.get('tray_color')}")
     return out
-
-
-class ImplicitFTPS(ftplib.FTP_TLS):
-    """FTPS แบบ implicit (TLS ตั้งแต่ต่อ) ที่เครื่อง Bambu ใช้ ช่องส่งไฟล์ต้องใช้ TLS session เดียวกับช่องคำสั่ง ไม่งั้น LIST/RETR ค้าง"""
-
-    def __init__(self, *a, **k):
-        super().__init__(*a, **k)
-        self._sock = None
-
-    @property
-    def sock(self):
-        return self._sock
-
-    @sock.setter
-    def sock(self, value):
-        if value is not None and not isinstance(value, ssl.SSLSocket):
-            value = self.context.wrap_socket(value)
-        self._sock = value
-
-    def ntransfercmd(self, cmd, rest=None):
-        conn, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
-        if self._prot_p:
-            conn = self.context.wrap_socket(conn, session=self.sock.session)
-        return conn, size
-
-
-def ftps(x):
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    f = ImplicitFTPS(context=ctx)
-    f.connect(x["host"], 990, timeout=15)
-    f.login("bblp", x["access_code"])
-    f.prot_p()
-    return f
 
 
 def slice_lines(raw):

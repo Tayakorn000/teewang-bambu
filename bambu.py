@@ -24,11 +24,13 @@ ponytail: ไม่ได้ลองกับเครื่องจริง�
 """
 
 import json
+import re
 import ssl
 import sys
 import threading
 import time
 
+from bambu_jobs import Tracker
 from push import push
 
 PUSH_S = 30
@@ -58,7 +60,7 @@ def merge(prev, payload, now):
         if isinstance(pc, int) and 0 <= pc <= 100:
             p["pct"] = pc
         # รายละเอียดตอนกดดูเครื่อง เก็บค่าดิบล่าสุดไว้ แปลงตอนส่ง (detail)
-        for k in ("nozzle_temper", "bed_temper", "chamber_temper", "layer_num", "total_layer_num", "subtask_name", "print_error", "hms"):
+        for k in ("nozzle_temper", "bed_temper", "chamber_temper", "layer_num", "total_layer_num", "subtask_name", "print_error", "hms", "task_id", "subtask_id", "gcode_file"):
             if k in pr:
                 p[k] = pr[k]
         ams = pr.get("ams")
@@ -86,7 +88,7 @@ def hexcode(n, parts):
 
 
 def tray(slot, t):
-    ty = str(t.get("tray_type") or "").strip()[:16]
+    ty = re.sub(r"[^A-Za-z0-9+\-_ .]", "", str(t.get("tray_type") or "")).strip()[:16]
     if not ty:
         return None
     color = str(t.get("tray_color") or "")[:6].upper()
@@ -131,7 +133,7 @@ def detail(p):
     return out
 
 
-def item(pid, p, now, connected=True, model=None):
+def item(pid, p, now, connected=True, model=None, grams=None):
     """สถานะที่ส่งเข้าเว็บ ตามรูปแบบของ POST /api/feed"""
     out = {"id": pid}
     if model:
@@ -143,6 +145,8 @@ def item(pid, p, now, connected=True, model=None):
         state = "idle"
     out["state"] = state
     out.update(detail(p))
+    if grams is not None and state in ("printing", "paused"):
+        out["grams"] = grams
     if state in ("printing", "paused"):
         if isinstance(p.get("left"), int):
             out["left_min"] = min(p["left"], 10_080)
@@ -207,7 +211,12 @@ def main(path):
         return c, serials
 
     clients = []
-    if cfg.get("mode", "lan") == "cloud":
+    cloud = cfg.get("mode", "lan") == "cloud"
+    # นับกรัมต่องานต้องดึงไฟล์จากเครื่องในวง แบบผ่านบัญชีรู้แค่ผลงานกับ % ไม่รู้กรัม
+    tracker = Tracker(fetch=None) if cloud else Tracker()
+    by_id = {x["id"]: x for x in printers}
+    pending = []
+    if cloud:
         cl = cfg["cloud"]
         host = {"us": "us.mqtt.bambulab.com", "cn": "cn.mqtt.bambulab.com"}[cl.get("region", "us")]
         clients.append(make(f"u_{cl['uid']}", cl["token"], host, 8883, True, list(by_serial), [x["id"] for x in printers]))
@@ -225,8 +234,18 @@ def main(path):
                 for s in serials:
                     c.publish(f"device/{s}/request", json.dumps({"pushing": {"sequence_id": "0", "command": "pushall"}}))
         with lock:
-            items = [item(pid, known[pid], now, up.get(pid, False), model[pid]) for pid in known]
-        ok = push(items)
+            for pid in known:
+                if up.get(pid) and now - known[pid].get("seen", 0) <= OFFLINE_S:
+                    for j in tracker.step(pid, by_id[pid], known[pid], now):
+                        used = sum(f["used"] for f in j["filaments"])
+                        print(time.strftime("%H:%M"), f"{pid} งานจบ ({j['result']} {j['pct']}%) {f'ใช้เส้น {used:.1f} g' if j['known'] else 'ไม่รู้กรัม'}", flush=True)
+                        pending.append(j)
+            items = [item(pid, known[pid], now, up.get(pid, False), model[pid], tracker.grams(pid)) for pid in known]
+        # งานที่จบแล้วส่งซ้ำจนเว็บรับ (เว็บไม่บันทึกซ้ำ) เก็บไว้ไม่เกิน 200 งานเผื่อเน็ตหลุดนาน
+        del pending[:-200]
+        ok = push(items, jobs=pending[:50])
+        if ok:
+            del pending[:50]
         # บอกคนที่เปิดหน้าต่างไว้ เฉพาะตอนสรุปเปลี่ยน ไม่พ่นทุก 30 วิ
         count = {}
         for x in items:
