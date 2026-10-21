@@ -71,8 +71,9 @@ def candidates(name, gcode_file):
     if g.lower().endswith(".3mf"):
         out.append("/" + re.sub(r"^/?(sdcard|mnt/sdcard)/", "", g).lstrip("/"))
     if name:
-        n = name if name.lower().endswith(".3mf") else f"{name}.3mf"
-        out += [f"/cache/{n}", f"/{n}", f"/model/{n}"]
+        # Bambu Studio ส่งไฟล์ที่สไลซ์แล้วชื่อ <งาน>.gcode.3mf บางทีก็ <งาน>.3mf
+        names = [name] if name.lower().endswith(".3mf") else [f"{name}.gcode.3mf", f"{name}.3mf"]
+        out += [f"{d}/{n}" for d in ("/cache", "", "/model") for n in names]
     return list(dict.fromkeys(out))
 
 
