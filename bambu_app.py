@@ -1,7 +1,8 @@
 """TeewangBambu.exe สำหรับแล็บที่ไม่อยากลง Python: ดับเบิลคลิกครั้งแรกตั้งค่า แล้วส่งสถานะเครื่อง Bambu เข้า teewang ไปเรื่อยๆ
 
   TeewangBambu.exe           ยังไม่เคยตั้งค่า = ตั้งค่าก่อน แล้วเริ่มส่ง
-  TeewangBambu.exe setup     ตั้งค่าใหม่ (token Bambu หมดอายุราว 3 เดือน หรือเปลี่ยนกุญแจ)
+  TeewangBambu.exe setup     ตั้งค่าใหม่ หรือเพิ่มเครื่องที่ปิดอยู่ตอนตั้งครั้งแรก
+  TeewangBambu.exe probe     สำรวจเครื่องแบบอ่านอย่างเดียว ไว้ทำส่วนนับกรัมเส้นต่องาน (bambu_probe.py) ไม่ส่งอะไรขึ้นเว็บ
   TeewangBambu.exe --check   เช็กว่าใน exe มีของครบ (ใช้ตอน build)
 
 ค่าตั้ง (token Bambu กับกุญแจ teewang) อยู่ที่ %LOCALAPPDATA%\\TeewangBambu\\bambu.json ของเครื่องนี้ ไม่อยู่ข้าง exe
@@ -15,6 +16,7 @@ import os
 import sys
 
 import bambu
+import bambu_probe
 import bambu_setup
 
 HOME = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "TeewangBambu")
@@ -53,6 +55,10 @@ def main():
         import paho.mqtt.client  # noqa: F401
 
         print("ok")
+        return
+    if "probe" in sys.argv[1:]:
+        bambu_probe.main(CFG)
+        input("เสร็จแล้ว แคปข้อความข้างบนส่งผู้ดูแลเว็บ กด Enter เพื่อปิด")
         return
     if "setup" in sys.argv[1:] or not os.path.exists(CFG):
         setup()

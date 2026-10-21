@@ -15,7 +15,7 @@ bambu.json
     ],
     "cloud": {"region": "us", "uid": "123456789", "token": "..."}     ใช้เมื่อ mode = cloud (host/access_code ไม่ต้องใส่)
   }
-  id = ต้องตรงกับรายชื่อเครื่องบนเว็บ เช่น INNO-X: IX-3D-X1E-01 ถึง IX-3D-X1E-10, SIT: SIT-3D-X2D-01
+  id = ต้องตรงกับรายชื่อเครื่องใน lib/feeds.ts (fleet) เช่น INNO-X: IX-3D-X1E-01 ถึง IX-3D-X1E-10, SIT: SIT-3D-X2D-01
   model = รุ่น (X1E, A1, ...) หน้าเว็บวาดรุ่น A เป็นโครงเปิด ที่เหลือเป็นกล่องปิด ไม่ใส่ก็ได้
   X1E มีช่องสาย LAN และ Wi-Fi แบบ WPA2-Enterprise (ตามสเปกของ Bambu) A1 ใช้ Wi-Fi ที่ใช้รหัสผ่านธรรมดา
 
@@ -57,7 +57,78 @@ def merge(prev, payload, now):
         pc = pr.get("mc_percent")
         if isinstance(pc, int) and 0 <= pc <= 100:
             p["pct"] = pc
+        # รายละเอียดตอนกดดูเครื่อง เก็บค่าดิบล่าสุดไว้ แปลงตอนส่ง (detail)
+        for k in ("nozzle_temper", "bed_temper", "chamber_temper", "layer_num", "total_layer_num", "subtask_name", "print_error", "hms"):
+            if k in pr:
+                p[k] = pr[k]
+        ams = pr.get("ams")
+        if isinstance(ams, dict):
+            if isinstance(ams.get("ams"), list):
+                p["ams"] = ams["ams"]
+            if "tray_now" in ams:
+                p["tray_now"] = ams["tray_now"]
+        if isinstance(pr.get("vt_tray"), dict):
+            p["vt_tray"] = pr["vt_tray"]
     return p
+
+
+def num(v, lo, hi):
+    """อุณหภูมิกับเลขชั้นที่เครื่องส่งมา (บางรุ่นเป็นทศนิยมหรือข้อความ) เป็นจำนวนเต็มในช่วงที่เว็บรับ หรือ None"""
+    try:
+        n = round(float(v))
+    except (TypeError, ValueError):
+        return None
+    return n if lo <= n <= hi else None
+
+
+def hexcode(n, parts):
+    return "-".join(f"{(n >> (16 * i)) & 0xFFFF:04X}" for i in reversed(range(parts)))
+
+
+def tray(slot, t):
+    ty = str(t.get("tray_type") or "").strip()[:16]
+    if not ty:
+        return None
+    color = str(t.get("tray_color") or "")[:6].upper()
+    remain = t.get("remain")
+    return {"slot": slot, "type": ty, "color": color if len(color) == 6 and all(c in "0123456789ABCDEF" for c in color) else None, "remain": remain if isinstance(remain, int) and 0 <= remain <= 100 else None}
+
+
+def detail(p):
+    """ช่องรายละเอียดตามรูปแบบที่เว็บรับ (lib/feeds.ts printerDetail) ค่าที่แปลกไม่ส่ง"""
+    out = {}
+    for src, dst, lo, hi in (("nozzle_temper", "nozzle", 0, 500), ("bed_temper", "bed", 0, 200), ("chamber_temper", "chamber", 0, 100), ("layer_num", "layer", 0, 100_000), ("total_layer_num", "layers", 0, 100_000)):
+        v = num(p.get(src), lo, hi)
+        if v is not None:
+            out[dst] = v
+    if isinstance(p.get("subtask_name"), str) and p["subtask_name"].strip():
+        out["job"] = p["subtask_name"].strip()[:80]
+    trays = []
+    for unit in p.get("ams") or []:
+        if not isinstance(unit, dict) or not str(unit.get("id", "")).isdigit() or int(unit["id"]) > 3:
+            continue
+        for t in unit.get("tray") or []:
+            if isinstance(t, dict) and str(t.get("id", "")).isdigit() and int(t["id"]) <= 3 and (x := tray(f"{'ABCD'[int(unit['id'])]}{int(t['id']) + 1}", t)):
+                trays.append(x)
+    if isinstance(p.get("vt_tray"), dict) and (x := tray("EXT", p["vt_tray"])):
+        trays.append(x)
+    if trays:
+        out["trays"] = trays
+    # tray_now: 0-15 = AMS ตัวที่ (n // 4) ช่อง (n % 4), 254 = ช่องนอก, 255 = ไม่ได้ใช้
+    now = str(p.get("tray_now", ""))
+    if now.isdigit() and int(now) < 16:
+        out["tray_now"] = f"{'ABCD'[int(now) // 4]}{int(now) % 4 + 1}"
+    elif now == "254":
+        out["tray_now"] = "EXT"
+    errors = []
+    if isinstance(p.get("print_error"), int) and p["print_error"] > 0:
+        errors.append(hexcode(p["print_error"], 2))
+    for h in p.get("hms") or []:
+        if isinstance(h, dict) and isinstance(h.get("attr"), int) and isinstance(h.get("code"), int):
+            errors.append(hexcode((h["attr"] << 32) | h["code"], 4))
+    if errors:
+        out["errors"] = errors[:8]
+    return out
 
 
 def item(pid, p, now, connected=True, model=None):
@@ -71,6 +142,7 @@ def item(pid, p, now, connected=True, model=None):
     if state in ("done", "error") and now - p.get("since", now) > DONE_AS_IDLE_S:
         state = "idle"
     out["state"] = state
+    out.update(detail(p))
     if state in ("printing", "paused"):
         if isinstance(p.get("left"), int):
             out["left_min"] = min(p["left"], 10_080)
