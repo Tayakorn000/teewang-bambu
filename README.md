@@ -39,4 +39,5 @@ TEEWANG_KEY=... python3 bambu.py bambu.json  # ส่งไปเรื่อย
 ## หมายเหตุ
 
 - ข้อความจากเครื่องกับขั้นล็อกอินเขียนตามที่ [OpenBambuAPI](https://github.com/Doridian/OpenBambuAPI) และ [ha-bambulab](https://github.com/greghesp/ha-bambulab) แกะไว้ ไม่ใช่ API ทางการของ Bambu Lab
+- build exe เองได้บนเครื่อง Linux ที่มี Docker: `./build.sh` (PyInstaller ของ Windows รันใน Wine)
 - exe รวม [paho-mqtt](https://github.com/eclipse-paho/paho.mqtt.python) (EPL-2.0 / EDL-1.0) และ build ด้วย PyInstaller

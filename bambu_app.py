@@ -6,7 +6,7 @@
 
 ค่าตั้ง (token Bambu กับกุญแจ teewang) อยู่ที่ %LOCALAPPDATA%\\TeewangBambu\\bambu.json ของเครื่องนี้ ไม่อยู่ข้าง exe
 ก๊อป exe ไปให้คนอื่นแล้วรหัสไม่ติดไปด้วย
-build: .github/workflows/release.yml (ติด tag v* แล้ว GitHub build exe บน Windows แนบใน Releases)
+build: ./build.sh บนเครื่องที่มี Docker (PyInstaller ของ Windows ใน Wine) แล้วแนบ dist/TeewangBambu.exe ใน Releases
 """
 
 import getpass
