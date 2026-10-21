@@ -31,7 +31,7 @@ import bambu_setup
 HOME = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "TeewangBambu")
 CFG = os.path.join(HOME, "bambu.json")
 SVC = os.path.join(os.environ.get("PROGRAMDATA") or "C:\\ProgramData", "TeewangBambu")
-SVC_EXE, SVC_CFG, LOG = os.path.join(SVC, "TeewangBambu.exe"), os.path.join(SVC, "bambu.json"), os.path.join(SVC, "log.txt")
+SVC_CFG, LOG = os.path.join(SVC, "bambu.json"), os.path.join(SVC, "log.txt")
 TASK = "TeewangBambu"
 STARTUP = os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "TeewangBambu.cmd")
 WIN = os.name == "nt"
@@ -98,21 +98,20 @@ def install():
         setup()
     stop()
     os.makedirs(SVC, exist_ok=True)
-    if os.path.abspath(sys.executable).lower() != SVC_EXE.lower():
-        if os.path.exists(SVC_EXE):
-            # exe ที่ยังมีคนเปิดอยู่เขียนทับไม่ได้ แต่เปลี่ยนชื่อได้ ตัวเก่าลบทิ้งรอบหน้า
-            for old in [n for n in os.listdir(SVC) if n.startswith("TeewangBambu.old")]:
-                try:
-                    os.remove(os.path.join(SVC, old))
-                except OSError:
-                    pass
-            os.replace(SVC_EXE, os.path.join(SVC, f"TeewangBambu.old{int(time.time())}.exe"))
-        shutil.copy2(sys.executable, SVC_EXE)
+    # ตัวเก่าที่ปิดไม่ลงยังล็อกไฟล์ exe ไว้ (เขียนทับ เปลี่ยนชื่อ ไม่ได้) ลบตัวเก่าที่ลบได้ แล้ววางตัวใหม่ชื่อใหม่ทุกครั้ง task ชี้ไปตัวใหม่
+    for old in os.listdir(SVC):
+        if old.lower().startswith("teewangbambu") and old.lower().endswith(".exe"):
+            try:
+                os.remove(os.path.join(SVC, old))
+            except OSError:
+                pass
+    exe = os.path.join(SVC, f"TeewangBambu-{int(time.time())}.exe")
+    shutil.copy2(sys.executable, exe)
     shutil.copy2(CFG, SVC_CFG)
     ok, out = sh("icacls", SVC, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "/T")
     if not ok:
         print(f"ล็อกสิทธิ์โฟลเดอร์ไม่ได้: {out}")
-    ok, out = sh("schtasks", "/create", "/tn", TASK, "/tr", f'"{SVC_EXE}" run', "/sc", "onstart", "/ru", "SYSTEM", "/rl", "HIGHEST", "/f")
+    ok, out = sh("schtasks", "/create", "/tn", TASK, "/tr", f'"{exe}" run', "/sc", "onstart", "/ru", "SYSTEM", "/rl", "HIGHEST", "/f")
     if not ok:
         sys.exit(f"สร้าง task ไม่ได้: {out}")
     if os.path.exists(STARTUP):
@@ -129,7 +128,8 @@ def install():
 def stop():
     """หยุด task กับตัวส่งเบื้องหลังทุกตัว (exe แบบไฟล์เดียวมีสองโปรเซส /end ปิดแค่ตัวนอก ตัวในยังส่งต่อและถือ mutex)"""
     sh("schtasks", "/end", "/tn", TASK)
-    sh("powershell", "-NoProfile", "-Command", f"Get-Process TeewangBambu -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{SVC}\\*' }} | Stop-Process -Force")
+    # ปิดทุกโปรเซสชื่อขึ้นต้น TeewangBambu ยกเว้นตัวเองกับตัวนอกของตัวเอง (Get-Process ดู path ของโปรเซส SYSTEM ไม่ได้ เลยใช้ชื่อ)
+    sh("taskkill", "/F", "/IM", "TeewangBambu*", "/FI", f"PID ne {os.getpid()}", "/FI", f"PID ne {os.getppid()}")
     time.sleep(2)
 
 
