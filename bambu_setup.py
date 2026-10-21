@@ -59,12 +59,29 @@ def assign(devices, prefix="IX-3D-X1E-"):
     return [(f"{prefix}{n:02d}", d) for n, d in sorted(out, key=lambda x: x[0])]
 
 
-# ที่ Bambu Studio เก็บการล็อกอินไว้ (Windows, Mac, Linux)
-STUDIO = [
-    os.path.join(os.environ.get("APPDATA", ""), "BambuStudio", "BambuNetworkEngine.conf"),
-    os.path.expanduser("~/Library/Application Support/BambuStudio/BambuNetworkEngine.conf"),
-    os.path.expanduser("~/.config/BambuStudio/BambuNetworkEngine.conf"),
+# โฟลเดอร์ที่ Bambu Studio เก็บค่าไว้ (Windows, Mac, Linux) ไล่ทุกไฟล์ .conf .json ชั้นบนสุด
+STUDIO_DIRS = [
+    os.path.join(os.environ.get("APPDATA", ""), "BambuStudio"),
+    os.path.expanduser("~/Library/Application Support/BambuStudio"),
+    os.path.expanduser("~/.config/BambuStudio"),
 ]
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def studio_files():
+    for d in STUDIO_DIRS:
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for n in names:
+            if n.endswith((".conf", ".json")):
+                path = os.path.join(d, n)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        yield path, json.load(f)
+                except (OSError, ValueError):
+                    yield path, None
 
 
 def tokens(data, key=""):
@@ -79,46 +96,71 @@ def tokens(data, key=""):
         yield data
 
 
-def studio_token(api):
-    """token จาก Bambu Studio ที่ล็อกอินค้างไว้ในเครื่องนี้ ที่ลองเรียก Bambu แล้วใช้ได้จริง หรือ None
-    ponytail: ยังไม่เคยเห็นไฟล์จริง ถ้า Bambu Studio เข้ารหัสไฟล์ไว้ จะหาไม่เจอแล้วไปถามรหัสผ่านแทน"""
-    for path in STUDIO:
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            continue
+def shape(data, path=""):
+    """บรรทัดบอกโครงไฟล์ให้คนส่งมาให้ดู: ชื่อช่องที่เกี่ยวกับบัญชีกับความยาวค่า ไม่โชว์ค่า ยกเว้นอีเมล"""
+    if isinstance(data, dict):
+        for k, v in data.items():
+            yield from shape(v, f"{path}.{k}")
+    elif isinstance(data, list):
+        for i, v in enumerate(data[:5]):
+            yield from shape(v, f"{path}[{i}]")
+    elif re.search(r"token|user|uid|account|email|login|region|country", path, re.I):
+        v = str(data)
+        yield f"  {path} = {v}" if EMAIL.match(v) else f"  {path} ({type(data).__name__} ยาว {len(v)})"
+
+
+def studio_token():
+    """(region, token) จาก Bambu Studio ที่ล็อกอินค้างไว้ในเครื่องนี้ ลองเรียก Bambu แล้วใช้ได้จริง หรือ None
+    ponytail: ยังไม่เคยเห็นไฟล์จริง หาไม่เจอจะพิมพ์โครงไฟล์ (ไม่มีค่า token) ให้ส่งมาดูแล้วแก้ให้ตรง"""
+    found = list(studio_files())
+    for _, data in found:
         for tok in tokens(data):
-            try:
-                if call(f"{api}/v1/design-user-service/my/preference", token=tok, quiet=True).get("uid"):
-                    return tok
-            except (ApiError, OSError, ValueError):
-                continue
+            for region, api in API.items():
+                try:
+                    if call(f"{api}/v1/design-user-service/my/preference", token=tok, quiet=True).get("uid"):
+                        return region, tok
+                except (ApiError, OSError, ValueError):
+                    continue
+    print("ไม่เจอการล็อกอินที่ใช้ได้ของ Bambu Studio ในเครื่องนี้" if found else "ไม่เจอโฟลเดอร์ของ Bambu Studio ในเครื่องนี้")
+    for path, data in found:
+        lines = list(shape(data)) if data is not None else ["  (อ่านเป็น JSON ไม่ได้ อาจเข้ารหัสไว้)"]
+        print(path)
+        print("\n".join(lines) or "  (ไม่มีช่องเกี่ยวกับบัญชี)")
+    if found:
+        print("แคปข้อความข้างบนส่งให้ผู้ดูแลเว็บได้ ไม่มีค่า token หรือรหัสผ่านอยู่ในนั้น")
     return None
 
 
-def login(api):
+def login():
+    """อีเมลกับรหัสผ่าน ลองบัญชีทั่วโลกก่อน ไม่ผ่านค่อยลองบัญชีจีน คืน (region, token)"""
     email = input("อีเมลบัญชี Bambu: ").strip()
-    r = call(f"{api}/v1/user-service/user/login", {"account": email, "password": getpass.getpass("รหัสผ่าน (ไม่แสดงตอนพิมพ์): "), "apiError": ""})
-    if r.get("accessToken"):
-        return r["accessToken"]
-    if r.get("loginType") == "verifyCode":
-        call(f"{api}/v1/user-service/user/sendemail/code", {"email": email, "type": "codeLogin"})
-        r = call(f"{api}/v1/user-service/user/login", {"account": email, "code": input("รหัสยืนยันที่ส่งไปทางอีเมล: ").strip()})
+    pw = getpass.getpass("รหัสผ่าน (ไม่แสดงตอนพิมพ์): ")
+    errors = []
+    for region, api in API.items():
+        try:
+            r = call(f"{api}/v1/user-service/user/login", {"account": email, "password": pw, "apiError": ""}, quiet=True)
+        except (ApiError, OSError) as e:
+            errors.append(str(e))
+            continue
         if r.get("accessToken"):
-            return r["accessToken"]
-    if r.get("loginType") == "tfa":
-        sys.exit("บัญชีนี้เปิดยืนยันสองขั้นแบบแอป ตัวช่วยนี้ยังไม่รองรับ")
-    sys.exit(f"ล็อกอินไม่ผ่าน: {json.dumps(r, ensure_ascii=False)[:300]}")
+            return region, r["accessToken"]
+        if r.get("loginType") == "verifyCode":
+            call(f"{api}/v1/user-service/user/sendemail/code", {"email": email, "type": "codeLogin"})
+            r = call(f"{api}/v1/user-service/user/login", {"account": email, "code": input("รหัสยืนยันที่ส่งไปทางอีเมล: ").strip()})
+            if r.get("accessToken"):
+                return region, r["accessToken"]
+        if r.get("loginType") == "tfa":
+            sys.exit("บัญชีนี้เปิดยืนยันสองขั้นแบบแอป ตัวช่วยนี้ยังไม่รองรับ")
+        errors.append(json.dumps(r, ensure_ascii=False)[:300])
+    sys.exit("ล็อกอินไม่ผ่าน:\n" + "\n".join(errors))
 
 
 def main(path, prefix):
-    region = "cn" if input("บัญชีจีน (bambulab.cn) ใช่ไหม [y/N]: ").strip().lower() == "y" else "us"
+    got = studio_token()
+    if got and input("เจอบัญชีที่ล็อกอินค้างใน Bambu Studio เครื่องนี้ ใช้บัญชีนั้นเลยไหม [Y/n]: ").strip().lower() == "n":
+        got = None
+    region, token = got or login()
     api = API[region]
-    token = studio_token(api)
-    if token and input("เจอบัญชีที่ล็อกอินค้างใน Bambu Studio เครื่องนี้ ใช้บัญชีนั้นเลยไหม [Y/n]: ").strip().lower() == "n":
-        token = None
-    token = token or login(api)
     uid = call(f"{api}/v1/design-user-service/my/preference", token=token)["uid"]
     devices = call(f"{api}/v1/iot-service/api/user/bind", token=token).get("devices", [])
     if not devices:
