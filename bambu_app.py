@@ -229,6 +229,7 @@ if __name__ == "__main__":
         if e.code not in (None, 0):
             print(e.code)
             input("กด Enter เพื่อปิด")
-    except Exception as e:  # noqa: BLE001
-        print(f"พัง: {e!r}")
-        input("กด Enter เพื่อปิด")
+    except Exception:  # noqa: BLE001
+        # เต็มๆ พร้อมชื่อไฟล์และบรรทัด ให้แคปส่งผู้ดูแลได้เลย ({e!r} ของ PermissionError ไม่บอกว่าไฟล์ไหน)
+        traceback.print_exc()
+        input("แคปข้อความข้างบนส่งผู้ดูแลเว็บ กด Enter เพื่อปิด")
