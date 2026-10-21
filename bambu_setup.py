@@ -78,10 +78,23 @@ def studio_files():
             if n.endswith((".conf", ".json")):
                 path = os.path.join(d, n)
                 try:
-                    with open(path, encoding="utf-8") as f:
-                        yield path, json.load(f)
-                except (OSError, ValueError):
-                    yield path, None
+                    with open(path, "rb") as f:
+                        yield path, parse(f.read())
+                except OSError:
+                    continue
+
+
+def parse(raw):
+    """JSON ของ Bambu Studio มีบรรทัด # (เช่น # MD5 checksum) ต่อท้าย ตัดทิ้งก่อนอ่าน อ่านไม่ได้คืนคำอธิบายไฟล์ (str) ไม่มีเนื้อหา"""
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return f"ไม่ใช่ข้อความ น่าจะเข้ารหัสไว้ ยาว {len(raw)} ไบต์"
+    try:
+        return json.loads("\n".join(x for x in text.splitlines() if not x.lstrip().startswith("#")))
+    except ValueError:
+        first = text.lstrip()[:1]
+        return f"เป็นข้อความแต่ไม่ใช่ JSON ยาว {len(raw)} ไบต์ ขึ้นต้นด้วย {'ตัวอักษร' if first.isalnum() else repr(first)} มีคำว่า token {text.lower().count('token')} ที่"
 
 
 def tokens(data, key=""):
@@ -114,7 +127,7 @@ def studio_token():
     ponytail: ยังไม่เคยเห็นไฟล์จริง หาไม่เจอจะพิมพ์โครงไฟล์ (ไม่มีค่า token) ให้ส่งมาดูแล้วแก้ให้ตรง"""
     found = list(studio_files())
     for _, data in found:
-        for tok in tokens(data):
+        for tok in tokens(data) if not isinstance(data, str) else []:
             for region, api in API.items():
                 try:
                     if call(f"{api}/v1/design-user-service/my/preference", token=tok, quiet=True).get("uid"):
@@ -123,7 +136,7 @@ def studio_token():
                     continue
     print("ไม่เจอการล็อกอินที่ใช้ได้ของ Bambu Studio ในเครื่องนี้" if found else "ไม่เจอโฟลเดอร์ของ Bambu Studio ในเครื่องนี้")
     for path, data in found:
-        lines = list(shape(data)) if data is not None else ["  (อ่านเป็น JSON ไม่ได้ อาจเข้ารหัสไว้)"]
+        lines = [f"  ({data})"] if isinstance(data, str) else list(shape(data))
         print(path)
         print("\n".join(lines) or "  (ไม่มีช่องเกี่ยวกับบัญชี)")
     if found:
