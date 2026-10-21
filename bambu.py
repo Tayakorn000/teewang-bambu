@@ -74,6 +74,10 @@ def merge(prev, payload, now):
     return p
 
 
+def bambu_layer(p):
+    return p["layer_num"] if isinstance(p.get("layer_num"), int) else 0
+
+
 def num(v, lo, hi):
     """อุณหภูมิกับเลขชั้นที่เครื่องส่งมา (บางรุ่นเป็นทศนิยมหรือข้อความ) เป็นจำนวนเต็มในช่วงที่เว็บรับ หรือ None"""
     try:
@@ -133,7 +137,7 @@ def detail(p):
     return out
 
 
-def item(pid, p, now, connected=True, model=None, grams=None):
+def item(pid, p, now, connected=True, model=None, grams=None, used=None):
     """สถานะที่ส่งเข้าเว็บ ตามรูปแบบของ POST /api/feed"""
     out = {"id": pid}
     if model:
@@ -147,6 +151,8 @@ def item(pid, p, now, connected=True, model=None, grams=None):
     out.update(detail(p))
     if grams is not None and state in ("printing", "paused"):
         out["grams"] = grams
+        if used is not None:
+            out["used"] = min(used, grams)
     if state in ("printing", "paused"):
         if isinstance(p.get("left"), int):
             out["left_min"] = min(p["left"], 10_080)
@@ -240,7 +246,7 @@ def main(path):
                         used = sum(f["used"] for f in j["filaments"])
                         print(time.strftime("%H:%M"), f"{pid} งานจบ ({j['result']} {j['pct']}%) {f'ใช้เส้น {used:.1f} g' if j['known'] else 'ไม่รู้กรัม'}", flush=True)
                         pending.append(j)
-            items = [item(pid, known[pid], now, up.get(pid, False), model[pid], tracker.grams(pid)) for pid in known]
+            items = [item(pid, known[pid], now, up.get(pid, False), model[pid], tracker.grams(pid), tracker.used(pid, bambu_layer(known[pid]))) for pid in known]
         # งานที่จบแล้วส่งซ้ำจนเว็บรับ (เว็บไม่บันทึกซ้ำ) เก็บไว้ไม่เกิน 200 งานเผื่อเน็ตหลุดนาน
         del pending[:-200]
         ok = push(items, jobs=pending[:50])
