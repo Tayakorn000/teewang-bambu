@@ -66,9 +66,11 @@ def running():
         return False
     import ctypes
 
-    k = ctypes.windll.kernel32
+    # use_last_error: GetLastError ผ่าน ctypes ธรรมดาอาจได้ค่าค้างจากคำสั่งอื่น แล้วนึกว่ามีตัวส่งอยู่แล้วทั้งที่ไม่มี
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateMutexW.restype = ctypes.c_void_p
     _mutex = k.CreateMutexW(None, False, "Global\\TeewangBambu")
-    return k.GetLastError() in (183, 5)  # มีอยู่แล้ว / ของ SYSTEM ที่เราเปิดไม่ได้ = มีตัวอื่นถืออยู่
+    return ctypes.get_last_error() in (183, 5)  # มีอยู่แล้ว / ของ SYSTEM ที่เราเปิดไม่ได้ = มีตัวอื่นถืออยู่
 
 
 def installed():
@@ -94,10 +96,17 @@ def install():
     """ก๊อป exe กับค่าตั้งไป ProgramData ล็อกให้อ่านได้เฉพาะ SYSTEM กับผู้ดูแล สร้าง task ตอนเปิดเครื่องแล้วเริ่มเลย"""
     if not os.path.exists(CFG):
         setup()
-    sh("schtasks", "/end", "/tn", TASK)
-    time.sleep(2)
+    stop()
     os.makedirs(SVC, exist_ok=True)
     if os.path.abspath(sys.executable).lower() != SVC_EXE.lower():
+        if os.path.exists(SVC_EXE):
+            # exe ที่ยังมีคนเปิดอยู่เขียนทับไม่ได้ แต่เปลี่ยนชื่อได้ ตัวเก่าลบทิ้งรอบหน้า
+            for old in [n for n in os.listdir(SVC) if n.startswith("TeewangBambu.old")]:
+                try:
+                    os.remove(os.path.join(SVC, old))
+                except OSError:
+                    pass
+            os.replace(SVC_EXE, os.path.join(SVC, f"TeewangBambu.old{int(time.time())}.exe"))
         shutil.copy2(sys.executable, SVC_EXE)
     shutil.copy2(CFG, SVC_CFG)
     ok, out = sh("icacls", SVC, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "/T")
@@ -117,11 +126,17 @@ def install():
         print("ตั้งแล้ว ใช้แบตอยู่ยังหลับตามปกติ")
 
 
-def uninstall():
+def stop():
+    """หยุด task กับตัวส่งเบื้องหลังทุกตัว (exe แบบไฟล์เดียวมีสองโปรเซส /end ปิดแค่ตัวนอก ตัวในยังส่งต่อและถือ mutex)"""
     sh("schtasks", "/end", "/tn", TASK)
+    sh("powershell", "-NoProfile", "-Command", f"Get-Process TeewangBambu -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -like '{SVC}\\*' }} | Stop-Process -Force")
+    time.sleep(2)
+
+
+def uninstall():
+    stop()
     ok, out = sh("schtasks", "/delete", "/tn", TASK, "/f")
     print("เอา task ออกแล้ว" if ok else f"ไม่มี task หรือเอาออกไม่ได้: {out}")
-    time.sleep(2)
     shutil.rmtree(SVC, ignore_errors=True)
 
 
