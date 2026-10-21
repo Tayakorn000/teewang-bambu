@@ -103,7 +103,7 @@ def parse_slice(xml_text, plate=None):
 
 
 def slice_info(x, name, gcode_file):
-    """ดึงไฟล์งานจากเครื่องแล้วคืนข้อความ slice_info.config หรือ None"""
+    """ดึงไฟล์งานจากเครื่องแล้วคืนข้อความ slice_info.config ไม่เจอ = FileNotFoundError บอกที่ที่ลองไป"""
     f = ftps(x)
     try:
         paths = candidates(name, gcode_file)
@@ -125,7 +125,7 @@ def slice_info(x, name, gcode_file):
 
                 try:
                     f.retrbinary(f"RETR {path}", write)
-                except (ftplib.all_errors, ValueError):
+                except (*ftplib.all_errors, ValueError):
                     continue
                 buf.seek(0)
                 try:
@@ -133,11 +133,12 @@ def slice_info(x, name, gcode_file):
                         return z.read("Metadata/slice_info.config").decode("utf-8", errors="replace")
                 except (zipfile.BadZipFile, KeyError):
                     continue
-        return None
+        # บอกว่าลองที่ไหนไปบ้าง ให้คนดู log แล้วรู้ว่าไฟล์งานอยู่ที่อื่น
+        raise FileNotFoundError(f"ไม่เจอไฟล์งาน ลอง {list(dict.fromkeys(paths))}")
     finally:
         try:
             f.quit()
-        except (OSError, *ftplib.all_errors):
+        except ftplib.all_errors:
             pass
 
 

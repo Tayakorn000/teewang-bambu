@@ -125,7 +125,7 @@ def main(path):
         print(f"{x['id']}")
         try:
             f = ftps(x)
-        except (OSError, ftplib.all_errors) as e:
+        except ftplib.all_errors as e:
             print(f"    เข้า FTPS ไม่ได้: {e!r}")
             continue
         print("    เข้า FTPS ได้")
@@ -143,11 +143,11 @@ def main(path):
                 f.retrbinary(f"RETR {hit}", buf.write)
                 print(f"    อ่าน {hit} ได้ {buf.tell()} ไบต์")
                 print("\n".join(slice_lines(buf.getvalue())))
-            except (OSError, ftplib.all_errors, zipfile.BadZipFile) as e:
+            except (*ftplib.all_errors, zipfile.BadZipFile) as e:
                 print(f"    อ่านไฟล์งานไม่ได้: {e!r}")
         try:
             f.quit()
-        except (OSError, ftplib.all_errors):
+        except ftplib.all_errors:
             pass
 
 
