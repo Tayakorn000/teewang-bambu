@@ -1,6 +1,6 @@
 #!/bin/bash
 # คอมไพล์เฟิร์มแวร์ ESP ทั้ง 3 ชิป แล้ววางไฟล์ให้หน้าลงโปรแกรม (ESP Web Tools) ใน OUT
-#   ./build.sh ~/Documents/kmutt-lib/public/esp
+#   ./build.sh ~/Documents/teewang/kmutt-lib/public/esp
 # ต้องมี arduino-cli, core esp32 3.3.x, ไลบรารี PubSubClient 2.8 กับ ArduinoJson 7
 # แยกไฟล์ทีละส่วน ไม่ใช้ merged.bin: merged เขียนทับช่อง NVS ค่าตั้งจะหายทุกครั้งที่อัปเดต
 set -euo pipefail
